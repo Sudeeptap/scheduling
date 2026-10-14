@@ -1,0 +1,73 @@
+flowchart TD
+    Start(["▶ Start"])
+    Receive["Receive User Request"]
+    Resolve["Resolve Date & Time\nfrom natural language"]
+    Determine["Determine Doctor / Specialty"]
+    CheckAvail["Check Availability"]
+    DB1[("DB: doctor_availability\n+ appointment")]
+
+    AvailFound{"Availability\nFound?"}
+
+    SuggestSlot["Suggest Alternate Slot\nnext available on same / next day"]
+    SuggestDoctor["Suggest Alternate Doctor\nsame specialty, earliest slot"]
+    AltAvailFound{"Alternate\nAccepted?"}
+
+    CollectDetails["Collect Patient Details\nname · DOB · phone"]
+    ValidateDetails{"Details\nValid?"}
+    RepromptDetails["Re-prompt for\nMissing / Invalid Details"]
+
+    Summary["Show Appointment Summary\ndoctor · date · time · patient"]
+    Confirm{"Patient\nConfirms?"}
+
+    SaveAppt["Save Appointment\nINSERT with SELECT FOR UPDATE"]
+    DB2[("DB: appointment")]
+    BookingOK{"Booking\nSucceeded?"}
+
+    SlotTaken["Notify: Slot Just Taken\nRe-offer next available"]
+    BookingRef["Return Booking Reference\ne.g. SC-2026-00042"]
+    EndOK(["✅ End – Booked"])
+    EndCancel(["❌ End – Cancelled"])
+
+    Start --> Receive
+    Receive --> Resolve
+    Resolve --> Determine
+    Determine --> CheckAvail
+    CheckAvail --> DB1
+    DB1 --> AvailFound
+
+    AvailFound -- "Yes" --> CollectDetails
+    AvailFound -- "No" --> SuggestSlot
+    SuggestSlot --> SuggestDoctor
+    SuggestDoctor --> AltAvailFound
+    AltAvailFound -- "Yes – accepts alt slot/doctor" --> CollectDetails
+    AltAvailFound -- "No" --> EndCancel
+
+    CollectDetails --> ValidateDetails
+    ValidateDetails -- "Invalid" --> RepromptDetails
+    RepromptDetails --> CollectDetails
+    ValidateDetails -- "Valid" --> Summary
+
+    Summary --> Confirm
+    Confirm -- "No" --> EndCancel
+    Confirm -- "Yes" --> SaveAppt
+
+    SaveAppt --> DB2
+    DB2 --> BookingOK
+    BookingOK -- "No – SLOT_TAKEN" --> SlotTaken
+    SlotTaken --> CheckAvail
+    BookingOK -- "Yes" --> BookingRef
+    BookingRef --> EndOK
+
+    classDef terminator fill:#D5E8D4,stroke:#82B366,color:#000,rx:20
+    classDef process    fill:#DAE8FC,stroke:#6C8EBF,color:#000
+    classDef decision   fill:#FFE6CC,stroke:#D6B656,color:#000
+    classDef db         fill:#F8CECC,stroke:#B85450,color:#000
+    classDef endok      fill:#D5E8D4,stroke:#82B366,color:#000
+    classDef endno      fill:#F8CECC,stroke:#B85450,color:#000
+
+    class Start terminator
+    class Receive,Resolve,Determine,CheckAvail,SuggestSlot,SuggestDoctor,CollectDetails,RepromptDetails,Summary,SaveAppt,SlotTaken,BookingRef process
+    class AvailFound,AltAvailFound,ValidateDetails,Confirm,BookingOK decision
+    class DB1,DB2 db
+    class EndOK endok
+    class EndCancel endno

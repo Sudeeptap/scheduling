@@ -1,0 +1,93 @@
+sequenceDiagram
+    autonumber
+
+    actor Caller as 🧑 Caller
+    participant API as FastAPI
+    participant Conv as Conversation Service
+    participant OAI as OpenAI Responses API
+    participant Disp as Tool Dispatcher
+    participant Sched as Scheduling Service
+    participant Appt as Appointment Service
+    participant DB as PostgreSQL
+
+    rect rgb(213, 232, 212)
+        Note over Caller,DB: Scenario 1 — Successful Booking
+        Caller->>API: POST /chat "Book Dr X tomorrow at 10 AM"
+        API->>Conv: forward message + session_id
+        Conv->>OAI: thread (system prompt + current datetime + message) + tool schemas
+        OAI-->>Conv: tool_call: search_doctor { doctor_name: "Dr X" }
+        Conv->>Disp: dispatch search_doctor
+        Disp->>Sched: find doctor by name
+        Sched->>DB: SELECT doctor WHERE name ILIKE 'Dr X'
+        DB-->>Sched: doctor_id=7, name="Dr. X", slot=30min
+        Sched-->>Disp: doctor record
+        Disp-->>Conv: tool_result { doctor_id:7, full_name:"Dr. X" }
+        Conv->>OAI: append tool_result, continue thread
+        OAI-->>Conv: tool_call: get_availability { doctor_id:7, date:"2026-10-15" }
+        Conv->>Disp: dispatch get_availability
+        Disp->>Sched: compute free slots for Oct 15
+        Sched->>DB: SELECT appointments WHERE doctor_id=7 AND date='2026-10-15'
+        DB-->>Sched: existing bookings
+        Sched-->>Disp: available_slots: [09:00, 10:00, 11:00]
+        Disp-->>Conv: tool_result { available_slots:[...], slot 10:00 free }
+        Conv->>OAI: append tool_result, continue thread
+        OAI-->>Conv: text "Slot available. Please provide your name, DOB and phone."
+        Conv-->>API: reply text
+        API-->>Caller: "Slot available. Please provide your details."
+
+        Caller->>API: POST /chat "John Smith, 1985-03-10, +65 9123 4567"
+        API->>Conv: forward message
+        Conv->>OAI: append message, continue thread
+        OAI-->>Conv: text "To confirm: Dr. X on 15 Oct at 10:00 AM for John Smith. Confirm? (yes/no)"
+        Conv-->>API: reply text
+        API-->>Caller: appointment summary + confirmation request
+
+        Caller->>API: POST /chat "Yes"
+        API->>Conv: forward message
+        Conv->>OAI: append message, continue thread
+        OAI-->>Conv: tool_call: book_appointment { doctor_id:7, datetime:"2026-10-15T10:00:00Z", patient:{...} }
+        Conv->>Disp: dispatch book_appointment
+        Disp->>Appt: create appointment
+        Appt->>DB: BEGIN; SELECT FOR UPDATE (doctor_id=7, datetime=10:00); INSERT appointment; COMMIT
+        DB-->>Appt: booking_reference="SC-2026-00042"
+        Appt-->>Disp: success + reference
+        Disp-->>Conv: tool_result { success:true, booking_reference:"SC-2026-00042" }
+        Conv->>OAI: append tool_result, continue thread
+        OAI-->>Conv: text "Booked! Your reference is SC-2026-00042."
+        Conv-->>API: reply text
+        API-->>Caller: "✅ Booked! Reference: SC-2026-00042"
+    end
+
+    rect rgb(255, 230, 204)
+        Note over Caller,DB: Scenario 2 — Alternate Slot & Doctor Suggestion
+        Caller->>API: POST /chat "I want to see Dr X today"
+        API->>Conv: forward message + session_id
+        Conv->>OAI: thread + tool schemas (today injected in system prompt)
+        OAI-->>Conv: tool_call: get_availability { doctor_id:7, date:"2026-10-14", find_next_available:false }
+        Conv->>Disp: dispatch get_availability
+        Disp->>Sched: check today's slots for Dr X
+        Sched->>DB: SELECT appointments WHERE doctor_id=7 AND date='2026-10-14'
+        DB-->>Sched: all slots booked
+        Sched-->>Disp: available_slots: []
+        Disp-->>Conv: tool_result { available_slots:[] }
+        Conv->>OAI: append tool_result, continue thread
+        OAI-->>Conv: tool_call: get_availability { doctor_id:7, date:"2026-10-14", find_next_available:true }
+        Conv->>Disp: dispatch get_availability (find next)
+        Disp->>Sched: scan forward up to 30 days
+        Sched->>DB: query next working day with free slots
+        DB-->>Sched: next slot = 2026-10-16T09:00:00Z
+        Sched-->>Disp: next_available_slot: "2026-10-16T09:00"
+        Disp-->>Conv: tool_result { next_available_slot:"2026-10-16T09:00" }
+        Conv->>OAI: append tool_result, continue thread
+        OAI-->>Conv: tool_call: search_doctor { specialty_name:"Dermatology" }
+        Conv->>Disp: dispatch search_doctor (alternate doctors)
+        Disp->>Sched: find alternate doctors in same specialty
+        Sched->>DB: SELECT doctors JOIN specialties WHERE specialty = Dr X's specialty
+        DB-->>Sched: [Dr. Y (id=9), Dr. Z (id=11)]
+        Sched-->>Disp: alternate doctor list (excl. Dr X)
+        Disp-->>Conv: tool_result { doctors:[Dr.Y, Dr.Z] }
+        Conv->>OAI: append tool_result, continue thread
+        OAI-->>Conv: text "Dr. X is fully booked today. Next slot: Oct 16 at 9 AM. Alternates: Dr. Y (today 2 PM), Dr. Z (today 3 PM). Which do you prefer?"
+        Conv-->>API: reply text
+        API-->>Caller: alternate slot + doctor options presented
+    end

@@ -1,0 +1,65 @@
+erDiagram
+    SPECIALTY {
+        int     id              PK
+        varchar name            "NOT NULL, UNIQUE"
+        text    description
+        boolean is_active       "DEFAULT TRUE"
+    }
+
+    DOCTOR {
+        int     id                      PK
+        varchar first_name              "NOT NULL"
+        varchar last_name               "NOT NULL"
+        int     slot_duration_minutes   "NOT NULL, DEFAULT 30"
+        boolean is_active               "DEFAULT TRUE"
+    }
+
+    DOCTOR_SPECIALTY {
+        int doctor_id    FK
+        int specialty_id FK
+    }
+
+    DOCTOR_AVAILABILITY {
+        int     id           PK
+        int     doctor_id    FK
+        int     day_of_week  "0=Mon, 6=Sun"
+        time    start_time   "NOT NULL"
+        time    end_time     "NOT NULL"
+        boolean is_active    "DEFAULT TRUE"
+    }
+
+    PATIENT {
+        int     id            PK
+        varchar first_name    "NOT NULL"
+        varchar last_name     "NOT NULL"
+        date    date_of_birth "NOT NULL"
+        varchar phone         "NOT NULL"
+        varchar email
+        timestamptz created_at "DEFAULT NOW()"
+    }
+
+    APPOINTMENT {
+        int         id                   PK
+        varchar     booking_reference    "NOT NULL, UNIQUE"
+        int         doctor_id            FK
+        int         patient_id           FK
+        timestamptz appointment_datetime "NOT NULL"
+        timestamptz end_datetime         "NOT NULL"
+        varchar     status               "confirmed | cancelled | rescheduled"
+        text        notes
+        timestamptz created_at           "DEFAULT NOW()"
+    }
+
+    CHAT_SESSION {
+        varchar     session_id      PK
+        jsonb       thread_history  "Full conversation turns"
+        varchar     status          "active | completed | expired"
+        timestamptz created_at      "DEFAULT NOW()"
+        timestamptz last_active_at
+    }
+
+    DOCTOR        ||--o{ DOCTOR_SPECIALTY    : "has"
+    SPECIALTY     ||--o{ DOCTOR_SPECIALTY    : "belongs to"
+    DOCTOR        ||--o{ DOCTOR_AVAILABILITY : "works"
+    DOCTOR        ||--o{ APPOINTMENT         : "attends"
+    PATIENT       ||--o{ APPOINTMENT         : "books"

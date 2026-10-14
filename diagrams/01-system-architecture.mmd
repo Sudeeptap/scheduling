@@ -1,0 +1,62 @@
+flowchart TD
+    Caller(["🧑‍💻 Caller\nPatient / Browser"])
+
+    subgraph FastAPI["FastAPI Application"]
+        direction TB
+        ChatEndpoint["POST /chat\nEndpoint"]
+        ConvService["Conversation Service\nThread & State Management"]
+        Dispatcher["Tool Dispatcher\nRoute & Validate"]
+    end
+
+    subgraph OpenAI["☁️ OpenAI Responses API"]
+        GPT["GPT-4o Model\nReasoning & Tool Calling"]
+    end
+
+    subgraph Tools["🔧 Tools"]
+        direction LR
+        T1{{"search_doctor"}}
+        T2{{"suggest_specialty"}}
+        T3{{"get_availability"}}
+        T4{{"book_appointment"}}
+        T5{{"cancel_appointment"}}
+    end
+
+    subgraph Services["Internal Services"]
+        direction LR
+        SchedSvc["Scheduling Service\nSlots & Availability"]
+        ApptSvc["Appointment Service\nBook / Cancel / Reschedule"]
+    end
+
+    DB[("PostgreSQL\nDatabase")]
+
+    Caller -- "POST /chat\nmessage + session_id" --> ChatEndpoint
+    ChatEndpoint -- "forward message" --> ConvService
+    ConvService -- "thread + tool schemas" --> GPT
+    GPT -- "tool_call" --> ConvService
+    ConvService -- "dispatch tool_call" --> Dispatcher
+    Dispatcher -- "route" --> T1 & T2 & T3 & T4 & T5
+    T1 & T2 & T3 --> SchedSvc
+    T4 & T5 --> ApptSvc
+    SchedSvc -- "query" --> DB
+    ApptSvc -- "read / write" --> DB
+    SchedSvc -- "tool result" --> Dispatcher
+    ApptSvc -- "tool result" --> Dispatcher
+    Dispatcher -- "tool_result JSON" --> ConvService
+    ConvService -- "tool_result" --> GPT
+    GPT -- "text response" --> ConvService
+    ConvService -- "reply text" --> ChatEndpoint
+    ChatEndpoint -- "JSON response" --> Caller
+
+    classDef caller    fill:#DAE8FC,stroke:#6C8EBF,color:#000
+    classDef endpoint  fill:#D5E8D4,stroke:#82B366,color:#000
+    classDef openai    fill:#FFE6CC,stroke:#D6B656,color:#000
+    classDef tool      fill:#FFF2CC,stroke:#D6B656,color:#000
+    classDef service   fill:#E1D5E7,stroke:#9673A6,color:#000
+    classDef db        fill:#F8CECC,stroke:#B85450,color:#000
+
+    class Caller caller
+    class ChatEndpoint,ConvService,Dispatcher endpoint
+    class GPT openai
+    class T1,T2,T3,T4,T5 tool
+    class SchedSvc,ApptSvc service
+    class DB db
