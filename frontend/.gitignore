@@ -1,0 +1,5 @@
+﻿# Dependency lock files and build outputs
+node_modules
+dist
+dist-ssr
+*.local
